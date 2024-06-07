@@ -3,6 +3,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 import torch.distributed as dist
 
+from transformers import AutoModel, AutoConfig
 from transformers.utils import logging
 from transformers.models.bert.modeling_bert import BertEncoder
 from transformers.modeling_outputs import TokenClassifierOutput
@@ -15,53 +16,53 @@ class Classifier(nn.Module):
     def __init__(
         self,
         reranker_config,
-        encoder_config,
+        encoder_model_path,
     ):
         super().__init__()
 
         ### Config ###
 
         self.reranker_config = reranker_config
-        self.encoder_config = encoder_config
+        self.encoder_config = AutoConfig.from_pretrained(encoder_model_path)
 
         ### Input Layer ###
 
         # Embedding: reranker logit을 BERT Encoder input으로 변환
         self.embedding = nn.Linear(
-            in_features=reranker_config.hidden_size,  # Reranker(BERT-base): 768
-            out_features=encoder_config.hidden_size,  # BERT-base: 768
+            in_features=self.reranker_config.hidden_size,  # Reranker(BERT-base): 768
+            out_features=self.encoder_config.hidden_size,  # BERT-base: 768
             bias=True,
         )  # -> (batch size, # (query + documents), hidden_size)
 
         # Positional encoding
         self.positional_encoding = nn.Embedding(
-            num_embeddings=encoder_config.max_position_embeddings,  # BERT-base: 512
-            embedding_dim=encoder_config.hidden_size,  # BERT-base: 768
+            num_embeddings=self.encoder_config.max_position_embeddings,  # BERT-base: 512
+            embedding_dim=self.encoder_config.hidden_size,  # BERT-base: 768
         )
 
         self.layer_norm = nn.LayerNorm(
-            normalized_shape=encoder_config.hidden_size,  # BERT-base: 768
-            eps=encoder_config.layer_norm_eps,  # BERT-base: 1e-12
+            normalized_shape=self.encoder_config.hidden_size,  # BERT-base: 768
+            eps=self.encoder_config.layer_norm_eps,  # BERT-base: 1e-12
         )
         self.dropout = nn.Dropout(
             p=(
-                encoder_config.classifier_dropout
-                if encoder_config.classifier_dropout
-                else encoder_config.hidden_dropout_prob
+                self.encoder_config.classifier_dropout
+                if self.encoder_config.classifier_dropout
+                else self.encoder_config.hidden_dropout_prob
             ),  # BERT-base: null (classifier_dropout), 0.1(hidden_dropout_prob)
         )  # -> (batch size, # (query + documents), hidden_size)
 
         ### Encoder Layer ###
 
         # Transformer encoder
-        self.encoder = BertEncoder(
-            config=encoder_config,
-        )  # -> last_hidden_states: (batch size, # (query + documents), hidden_size)
+        self.encoder = AutoModel.from_pretrained(
+            encoder_model_path
+        ).encoder  # -> last_hidden_states: (batch size, # (query + documents), hidden_size)
 
         # Token classifier: token(=document)별 query와의 연관도 판단
         self.classifier = nn.Linear(
-            in_features=encoder_config.hidden_size,
-            out_features=encoder_config.num_labels,
+            in_features=self.encoder_config.hidden_size,
+            out_features=self.encoder_config.num_labels,
         )
 
         ### Loss ###
@@ -73,14 +74,14 @@ class Classifier(nn.Module):
         self.register_buffer(
             name="position_ids",
             tensor=torch.arange(
-                end=encoder_config.max_position_embeddings,  # BERT-base: 512
+                end=self.encoder_config.max_position_embeddings,  # BERT-base: 512
             ).expand((1, -1)),
         )
 
     def forward(
         self,
         reranker_logits: torch.Tensor,  # (batch size, # (query + documents), reranker's hidden size)
-        attetion_mask: torch.Tensor = None,  # (batch size, batch 내 가장 긴 # (query + documents))
+        attetion_mask: torch.Tensor = None,  # (batch size, batch 내 가장 긴 # (query + documents)). 일반적으로 batch는 같은 top-k를 공유하기 때문에 별도의 attention mask를 필요로 하지 않음.
         labels=None,
     ) -> torch.Tensor:
         batch_size, num_tokens, reranker_hidden_size = (
