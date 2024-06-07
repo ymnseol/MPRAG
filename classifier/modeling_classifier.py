@@ -1,11 +1,8 @@
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
-import torch.distributed as dist
 
 from transformers import AutoModel, AutoConfig
 from transformers.utils import logging
-from transformers.models.bert.modeling_bert import BertEncoder
 from transformers.modeling_outputs import TokenClassifierOutput
 
 
