@@ -26,21 +26,37 @@ def compute_metrics(output):
 
 
 class ClassifierDataset(Dataset):
-    def __init__(self, data_path):
-        self.data = pd.read_csv(data_path, sep="\t", index_col=0)
+    def __init__(self, data_path, passage_data_path, top_k=10):
+        self.top_k = top_k
+        self.pairs = pd.read_csv(data_path, sep="\t", index_col=0)
+        self.passages = pd.read_csv(passage_data_path, sep="\t", index_col=0)
+        self.data = self.construct()
 
     def __getitem__(self, idx):
-        if "labels" in self.data.columns:
+        if self.data["labels"]:
             item = {
-                "inputs_embeds": torch.tensor(self.data.loc[idx, [f"embedding_{i}" for i in range(768)]]).unsqueeze(0).type(torch.float32),
-                "labels": torch.tensor(self.data.loc[idx, "labels"]).unsqueeze(0).type(torch.long),
+                "inputs_embeds": self.data["inputs_embeds"][idx],
+                "labels": self.data["labels"][idx],
             }
         else:
-            item = {"inputs_embeds": torch.tensor(self.data.iloc[idx].values[:-1]).unsqueeze(0).type(torch.float32)}
+            item = {"inputs_embeds": self.data["inputs_embeds"][idx]}
         return item
 
     def __len__(self):
-        return len(self.data)
+        return len(self.data["inputs_embeds"])
+
+    def construct(self):
+        # TODO: preprocess로 따로 빼기
+        data = {"inputs_embeds": [], "labels": []}
+        for i in range(0, len(self.pairs), self.top_k):
+            pairs = self.pairs.iloc[i : i + self.top_k]
+            passage_ids = pairs["passage_id"].tolist()
+            sequences = self.passages.iloc[passage_ids][[f"embedding_{i}" for i in range(768)]].values
+            data["inputs_embeds"].append(torch.tensor(sequences).type(torch.float32))
+            if "label" in pairs.columns:
+                labels = pairs["label"].tolist()
+                data["labels"].append(torch.tensor(labels).type(torch.long))
+        return data
 
 
 if __name__ == "__main__":
