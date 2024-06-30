@@ -83,6 +83,10 @@ if __name__ == "__main__":
         lr_scheduler_type=args.lr_scheduler_type,
         warmup_ratio=args.warmup_ratio,
         warmup_steps=args.warmup_steps,
+        dataloader_pin_memory=args.dataloader_pin_memory,
+        dataloader_persistent_workers=args.dataloader_persistent_workers,
+        dataloader_num_workers=args.dataloader_num_workers,
+        dataloader_drop_last=args.dataloader_drop_last,
     )
 
     trainer = Trainer(
