@@ -6,11 +6,13 @@ def get_args(parser):
     ### Data ###
     parser.add_argument("--train_data_path", dest="train_data_path", action="store", type=str)
     parser.add_argument("--eval_data_path", dest="eval_data_path", action="store", type=str)
-    parser.add_argument("--label_names", dest="label_names", action="store", type=str)
+    parser.add_argument("--passage_data_path", dest="passage_data_path", action="store", type=str)
 
     ### Models ###
     parser.add_argument("--pretrained_model_name_or_path", dest="pretrained_model_name_or_path", action="store", default="google-bert/bert-base-uncased", type=str)
     parser.add_argument("--label_smoothing", dest="label_smoothing", action="store", default=0.0, type=float)
+
+    parser.add_argument("--top_k", dest="top_k", action="store", default=200, type=int)
 
     ### Training Arguments ###
     parser.add_argument("--output_dir", dest="output_dir", action="store", default="outputs", type=str)

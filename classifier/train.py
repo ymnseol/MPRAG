@@ -74,8 +74,8 @@ if __name__ == "__main__":
     model_config.label_smoothing = args.label_smoothing
     model = Classifier.from_pretrained("google-bert/bert-base-uncased", config=model_config)
 
-    train_dataset = ClassifierDataset(args.data_path) # TODO
-    eval_dataset = ClassifierDataset(args.data_path) # TODO
+    train_dataset = ClassifierDataset(args.train_data_path, args.passage_data_path, args.top_k)
+    eval_dataset = ClassifierDataset(args.eval_data_path, args.passage_data_path, args.top_k)
 
     training_args = TrainingArguments(
         output_dir=args.output_dir,
