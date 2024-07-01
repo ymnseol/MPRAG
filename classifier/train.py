@@ -3,7 +3,7 @@ import argparse
 import pandas as pd
 import torch
 from torch.utils.data import Dataset
-from datasets import load_metric
+from datasets import load_metric, load_from_disk
 from transformers import (
     BertConfig,
     TrainingArguments,
@@ -26,37 +26,26 @@ def compute_metrics(output):
 
 
 class ClassifierDataset(Dataset):
-    def __init__(self, data_path, passage_data_path, top_k=10):
-        self.top_k = top_k
-        self.pairs = pd.read_csv(data_path, sep="\t", index_col=0)
-        self.passages = pd.read_csv(passage_data_path, sep="\t", index_col=0)
-        self.data = self.construct()
+    def __init__(self, data_path, passage_data_path):
+        self.pairs = load_from_disk(data_path)
+        self.passages = pd.read_csv(passage_data_path, sep="\t")
 
     def __getitem__(self, idx):
-        if self.data["labels"]:
+        pair = self.pairs[idx]
+        question_embed = torch.tensor(pair["question_embedding"]).unsqueeze(0)
+        passage_embeds = torch.tensor(self.passages[self.passages.index.isin(pair["passage_ids"])].values)
+        inputs_embeds = torch.cat((question_embed, passage_embeds), dim=0).type(torch.float32)
+        if self.pairs.features.get("labels"):
             item = {
-                "inputs_embeds": self.data["inputs_embeds"][idx],
-                "labels": self.data["labels"][idx],
+                "inputs_embeds": inputs_embeds,
+                "labels": [1] + pair["labels"],
             }
         else:
-            item = {"inputs_embeds": self.data["inputs_embeds"][idx]}
+            item = {"inputs_embeds": inputs_embeds}
         return item
 
     def __len__(self):
-        return len(self.data["inputs_embeds"])
-
-    def construct(self):
-        # TODO: preprocess로 따로 빼기
-        data = {"inputs_embeds": [], "labels": []}
-        for i in range(0, len(self.pairs), self.top_k):
-            pairs = self.pairs.iloc[i : i + self.top_k]
-            passage_ids = pairs["passage_id"].tolist()
-            sequences = self.passages.iloc[passage_ids][[f"embedding_{i}" for i in range(768)]].values
-            data["inputs_embeds"].append(torch.tensor(sequences).type(torch.float32))
-            if "label" in pairs.columns:
-                labels = pairs["label"].tolist()
-                data["labels"].append(torch.tensor(labels).type(torch.long))
-        return data
+        return len(self.pairs)
 
 
 if __name__ == "__main__":

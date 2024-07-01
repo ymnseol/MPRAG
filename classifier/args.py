@@ -12,8 +12,6 @@ def get_args(parser):
     parser.add_argument("--pretrained_model_name_or_path", dest="pretrained_model_name_or_path", action="store", default="google-bert/bert-base-uncased", type=str)
     parser.add_argument("--label_smoothing", dest="label_smoothing", action="store", default=0.0, type=float)
 
-    parser.add_argument("--top_k", dest="top_k", action="store", default=200, type=int)
-
     ### Training Arguments ###
     parser.add_argument("--output_dir", dest="output_dir", action="store", default="outputs", type=str)
     parser.add_argument("--logging_dir", dest="logging_dir", action="store", default="logs", type=str)
