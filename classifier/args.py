@@ -6,7 +6,7 @@ def get_args(parser):
     ### Data ###
     parser.add_argument("--train_data_path", dest="train_data_path", action="store", type=str)
     parser.add_argument("--eval_data_path", dest="eval_data_path", action="store", type=str)
-    parser.add_argument("--label_names", dest="label_names", action="store", type=str)
+    parser.add_argument("--passage_data_path", dest="passage_data_path", action="store", type=str)
 
     ### Models ###
     parser.add_argument("--pretrained_model_name_or_path", dest="pretrained_model_name_or_path", action="store", default="google-bert/bert-base-uncased", type=str)
@@ -38,6 +38,11 @@ def get_args(parser):
     parser.add_argument("--lr_scheduler_type", dest="lr_scheduler_type", action="store", default="linear", type=str)
     parser.add_argument("--warmup_ratio", dest="warmup_ratio", action="store", default=0.0, type=float)
     parser.add_argument("--warmup_steps", dest="warmup_steps", action="store", default=0, type=int)
+
+    parser.add_argument("--dataloader_pin_memory", dest="dataloader_pin_memory", action="store", default=True, type=bool)
+    parser.add_argument("--dataloader_persistent_workers", dest="dataloader_persistent_workers", action="store", default=False, type=bool)
+    parser.add_argument("--dataloader_num_workers", dest="dataloader_num_workers", action="store", default=0, type=int)
+    parser.add_argument("--dataloader_drop_last", dest="dataloader_drop_last", action="store", default=False, type=bool)
 
     ### Weights & Biases ###
     parser.add_argument("--wandb_project", dest="wandb_project", action="store", type=str)

@@ -3,7 +3,7 @@ import argparse
 import pandas as pd
 import torch
 from torch.utils.data import Dataset
-from datasets import load_metric
+from datasets import load_metric, load_from_disk
 from transformers import (
     BertConfig,
     TrainingArguments,
@@ -26,21 +26,26 @@ def compute_metrics(output):
 
 
 class ClassifierDataset(Dataset):
-    def __init__(self, data_path):
-        self.data = pd.read_csv(data_path, sep="\t", index_col=0)
+    def __init__(self, data_path, passage_data_path):
+        self.pairs = load_from_disk(data_path)
+        self.passages = pd.read_csv(passage_data_path, sep="\t")
 
     def __getitem__(self, idx):
-        if "labels" in self.data.columns:
+        pair = self.pairs[idx]
+        question_embed = torch.tensor(pair["question_embedding"]).unsqueeze(0)
+        passage_embeds = torch.tensor(self.passages[self.passages.index.isin(pair["passage_ids"])].values)
+        inputs_embeds = torch.cat((question_embed, passage_embeds), dim=0).type(torch.float32)
+        if self.pairs.features.get("labels"):
             item = {
-                "inputs_embeds": torch.tensor(self.data.loc[idx, [f"embedding_{i}" for i in range(768)]]).unsqueeze(0).type(torch.float32),
-                "labels": torch.tensor(self.data.loc[idx, "labels"]).unsqueeze(0).type(torch.long),
+                "inputs_embeds": inputs_embeds,
+                "labels": [1] + pair["labels"],
             }
         else:
-            item = {"inputs_embeds": torch.tensor(self.data.iloc[idx].values[:-1]).unsqueeze(0).type(torch.float32)}
+            item = {"inputs_embeds": inputs_embeds}
         return item
 
     def __len__(self):
-        return len(self.data)
+        return len(self.pairs)
 
 
 if __name__ == "__main__":
@@ -58,8 +63,8 @@ if __name__ == "__main__":
     model_config.label_smoothing = args.label_smoothing
     model = Classifier.from_pretrained("google-bert/bert-base-uncased", config=model_config)
 
-    train_dataset = ClassifierDataset(args.data_path) # TODO
-    eval_dataset = ClassifierDataset(args.data_path) # TODO
+    train_dataset = ClassifierDataset(args.train_data_path, args.passage_data_path, args.top_k)
+    eval_dataset = ClassifierDataset(args.eval_data_path, args.passage_data_path, args.top_k)
 
     training_args = TrainingArguments(
         output_dir=args.output_dir,
@@ -83,6 +88,10 @@ if __name__ == "__main__":
         lr_scheduler_type=args.lr_scheduler_type,
         warmup_ratio=args.warmup_ratio,
         warmup_steps=args.warmup_steps,
+        dataloader_pin_memory=args.dataloader_pin_memory,
+        dataloader_persistent_workers=args.dataloader_persistent_workers,
+        dataloader_num_workers=args.dataloader_num_workers,
+        dataloader_drop_last=args.dataloader_drop_last,
     )
 
     trainer = Trainer(
