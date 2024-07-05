@@ -47,7 +47,7 @@ def main(args):
                           load_from_cache_file=False
                           )
 
-    train_dataset = dataset['train'].select(range(32500))
+    train_dataset = dataset['train']
 
     num_train = int(len(train_dataset) * 0.9)
     num_val = len(train_dataset) - num_train
