@@ -94,6 +94,7 @@ class Trainer:
                     loss = loss / accumulation_step
 
                 loss.backward()
+                model.retriever_update()
 
                 if (i + 1) % accumulation_step == 0:
                     self.optimizer.step()
