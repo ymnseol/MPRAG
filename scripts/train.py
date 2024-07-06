@@ -181,13 +181,12 @@ class Trainer:
         preds = list()
         labels = list()
 
+        model.eval()
         with tqdm(val_loader, unit='b', ascii=True, ncols=150, desc=f'Validation') as pbar:
-            model.eval()
+            with torch.no_grad():
+                for i, data in enumerate(val_loader):
+                    data = {k: v.to(self.device) for k, v in data.items()}
 
-            for i, data in enumerate(val_loader):
-                data = {k: v.to(self.device) for k, v in data.items()}
-
-                with torch.no_grad():
                     output = model(**data)
                     loss = output.loss
                     val_loss += loss.item()
@@ -204,6 +203,8 @@ class Trainer:
                    'val/f1': f1,
                    'val/em': em
                    })
+
+        print(f'val loss: {val_loss / len(val_loader):.4f}, f1: {f1}, em: {em}')
 
         return val_loss / len(val_loader), f1, em
 
