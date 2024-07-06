@@ -2,9 +2,11 @@ import os
 import random
 import inspect
 from tqdm import tqdm
+from collections import Counter
+import re
+import string
 
 import torch
-from evaluate import load
 
 import numpy as np
 import wandb
@@ -20,14 +22,74 @@ def seed_everything(seed):
     torch.backends.cudnn.benchmark = False
 
 
+def normalize_answer(s):
+    """Lower text and remove punctuation, articles and extra whitespace."""
+
+    def remove_articles(text):
+        return re.sub(r'\b(a|an|the)\b', ' ', text)
+
+    def white_space_fix(text):
+        return ' '.join(text.split())
+
+    def remove_punctuation(text):
+        return ''.join(ch for ch in text if ch not in set(string.punctuation))
+
+    def lower(text):
+        return text.lower()
+
+    return white_space_fix(remove_articles(remove_punctuation(lower(s))))
+
+
+def exact_match_score(prediction, ground_truth):
+    """Check if the normalized predictions and ground truths match exactly."""
+    return int(normalize_answer(prediction) == normalize_answer(ground_truth))
+
+
+def f1_score(prediction, ground_truth):
+    """Compute F1 score between the normalized predictions and ground truths."""
+    pred_tokens = normalize_answer(prediction).split()
+    truth_tokens = normalize_answer(ground_truth).split()
+
+    common = Counter(pred_tokens) & Counter(truth_tokens)
+    num_same = sum(common.values())
+
+    if num_same == 0:
+        return 0
+
+    precision = num_same / len(pred_tokens)
+    recall = num_same / len(truth_tokens)
+
+    if precision + recall == 0:
+        return 0
+
+    return (2 * precision * recall) / (precision + recall)
+
+
+def calculate_metrics_batch(predictions, labels, tokenizer):
+    em_scores = []
+    f1_scores = []
+
+    for pred_ids, label_ids in zip(predictions, labels):
+        pred_text = tokenizer.decode(pred_ids, skip_special_tokens=True)
+        label_text = tokenizer.decode(label_ids, skip_special_tokens=True)
+
+        em = exact_match_score(pred_text, label_text)
+        f1 = f1_score(pred_text, label_text)
+
+        em_scores.append(em)
+        f1_scores.append(f1)
+
+    avg_em = np.mean(em_scores)
+    avg_f1 = np.mean(f1_scores)
+
+    return avg_em, avg_f1
+
+
 class Trainer:
     def __init__(self, **kwargs):
         self.seed = kwargs.get('seed', 42)
         self.device = kwargs.get('device', torch.device('cuda' if torch.cuda.is_available() else 'cpu'))
-
-        self.m1 = load('bleu')
-        self.m2 = load('meteor')
-        self.m3 = load('rouge')
+        self.tokenizer = kwargs.get('tokenizer', None)
 
         seed_everything(self.seed)
 
@@ -61,7 +123,7 @@ class Trainer:
 
         for epoch in range(num_epochs):
             self._train_step(model, train_loader, accumulation_step)
-            val_loss, _, _, _ = self._val_step(model, val_loader)
+            val_loss, _, _ = self._val_step(model, val_loader)
 
             os.makedirs('checkpoints', exist_ok=True)
             if val_loss < best_loss:
@@ -101,19 +163,16 @@ class Trainer:
                     self.optimizer.zero_grad()
 
                 preds += list(output.logits.argmax(-1))
-                labels += list(data['labels'].detach().cpu().numpy())
+                labels += list(data['labels'].detach().cpu().numpy().tolist())
 
                 pbar.set_postfix_str(f'loss: {loss.item():.4f}')
                 pbar.update(1)
 
-        bleu = self.m1.compute(predictions=preds, references=labels)
-        meteor = self.m2.compute(predictions=preds, references=labels)
-        rouge = self.m3.compute(predictions=preds, references=labels)
+        em, f1 = calculate_metrics_batch(preds, labels, self.tokenizer)
 
         wandb.log({'train/loss': train_loss / len(train_loader),
-                   'train/bleu': bleu,
-                   'train/meteor': meteor,
-                   'train/rouge': rouge
+                   'train/f1': f1,
+                   'train/em': em
                    })
 
     def _val_step(self, model, val_loader):
@@ -134,25 +193,22 @@ class Trainer:
                     val_loss += loss.item()
 
                     preds += list(output.logits.argmax(-1))
-                    labels += list(data['labels'].detach().cpu().numpy())
+                    labels += list(data['labels'].detach().cpu().numpy().tolist())
 
                     pbar.set_postfix_str(f'loss: {loss.item():.4f}')
                     pbar.update(1)
 
-        bleu = self.m1.compute(predictions=preds, references=labels)
-        meteor = self.m2.compute(predictions=preds, references=labels)
-        rouge = self.m3.compute(predictions=preds, references=labels)
+        em, f1 = calculate_metrics_batch(preds, labels, self.tokenizer)
 
         wandb.log({'val/loss': val_loss / len(val_loader),
-                   'val/bleu': bleu,
-                   'val/meteor': meteor,
-                   'val/rouge': rouge
+                   'val/f1': f1,
+                   'val/em': em
                    })
 
-        return val_loss / len(val_loader), bleu, meteor, rouge
+        return val_loss / len(val_loader), f1, em
 
     def test(self, model, test_loader):
         model.load_state_dict(torch.load('checkpoints/best_model.pth'))
-        test_loss, bleu, meteor, rouge = self._val_step(model, test_loader)
+        test_loss, f1, em = self._val_step(model, test_loader)
 
-        print(f'test loss: {test_loss:.4f}, bleu: {bleu}, meteor: {meteor}, rouge: {rouge}')
+        print(f'test loss: {test_loss:.4f}, f1: {f1}, em: {em}')
